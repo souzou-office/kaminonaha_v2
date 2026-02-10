@@ -89,7 +89,7 @@ export class FileWatcher {
       } finally {
         this.processing.delete(filePath);
       }
-    }, 2000); // 2秒待機（ファイル書き込み完了を待つ）
+    }, 3000); // 3秒待機（スキャナーの書き込み完了を待つ）
   }
 
   /** PDFファイルを処理してリネーム */
@@ -149,15 +149,40 @@ export class FileWatcher {
     }
   }
 
-  /** ファイルが読み取り可能か確認 */
+  /** ファイルが読み取り可能か確認（リトライ付き） */
   private async isFileReady(filePath: string): Promise<boolean> {
-    try {
-      const file = await Deno.open(filePath, { read: true });
-      file.close();
-      return true;
-    } catch {
-      return false;
+    // 最大5回リトライ（計15秒待つ）
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        // ファイルサイズが安定しているか確認
+        const stat1 = await Deno.stat(filePath);
+        const size1 = stat1.size;
+
+        // 1秒待ってサイズが変わっていないか確認
+        await new Promise(r => setTimeout(r, 1000));
+
+        const stat2 = await Deno.stat(filePath);
+        const size2 = stat2.size;
+
+        if (size1 !== size2 || size1 === 0) {
+          // まだ書き込み中
+          this.log("info", `📝 書き込み中... リトライ ${attempt + 1}/5`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+
+        // 読み書きでオープンしてみる（Windowsのロック検出）
+        const file = await Deno.open(filePath, { read: true, write: true });
+        file.close();
+        return true;
+      } catch {
+        if (attempt < 4) {
+          this.log("info", `⏳ ファイル待機中... リトライ ${attempt + 1}/5`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
     }
+    return false;
   }
 
   /** ファイル名を最大長に切り詰め */
