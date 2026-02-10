@@ -307,13 +307,22 @@ export class Server {
   private async openFolderDialog(): Promise<{ valid: boolean; path?: string; error?: string }> {
     try {
       if (Deno.build.os === "windows") {
-        // PowerShellでFolderBrowserDialogを起動
+        // CommonOpenFileDialogでモダンなフォルダ選択（ショートカット・クイックアクセス対応）
+        const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -Path "$([System.Environment]::GetFolderPath('MyDocuments'))\\..\\..\\..\\Windows\\Microsoft.NET\\assembly\\GAC_MSIL\\System.Windows.Forms\\*\\System.Windows.Forms.dll" -ErrorAction SilentlyContinue
+
+# モダンダイアログ（CommonOpenFileDialog相当）をCOM経由で呼ぶ
+$shell = New-Object -ComObject Shell.Application
+$folder = $shell.BrowseForFolder(0, '監視するフォルダを選択してください', 0x0040 + 0x0010, 0)
+if ($folder -ne $null) {
+  Write-Output $folder.Self.Path
+} else {
+  Write-Output ''
+}
+`;
         const cmd = new Deno.Command("powershell", {
-          args: [
-            "-NoProfile",
-            "-Command",
-            `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '監視するフォルダを選択してください'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }`,
-          ],
+          args: ["-NoProfile", "-STA", "-Command", psScript],
           stdout: "piped",
           stderr: "piped",
         });
