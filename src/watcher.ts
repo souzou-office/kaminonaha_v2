@@ -151,12 +151,18 @@ export class FileWatcher {
 
   /** ファイルが読み取り可能か確認（リトライ付き） */
   private async isFileReady(filePath: string): Promise<boolean> {
-    // 最大5回リトライ（計15秒待つ）
+    // 最大5回リトライ
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         // ファイルサイズが安定しているか確認
         const stat1 = await Deno.stat(filePath);
         const size1 = stat1.size;
+
+        if (size1 === 0) {
+          this.log("info", `📝 ファイルサイズ0... リトライ ${attempt + 1}/5`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
 
         // 1秒待ってサイズが変わっていないか確認
         await new Promise(r => setTimeout(r, 1000));
@@ -164,15 +170,14 @@ export class FileWatcher {
         const stat2 = await Deno.stat(filePath);
         const size2 = stat2.size;
 
-        if (size1 !== size2 || size1 === 0) {
-          // まだ書き込み中
+        if (size1 !== size2) {
           this.log("info", `📝 書き込み中... リトライ ${attempt + 1}/5`);
           await new Promise(r => setTimeout(r, 2000));
           continue;
         }
 
-        // 読み書きでオープンしてみる（Windowsのロック検出）
-        const file = await Deno.open(filePath, { read: true, write: true });
+        // 読み取りでオープンできるか確認
+        const file = await Deno.open(filePath, { read: true });
         file.close();
         return true;
       } catch {
