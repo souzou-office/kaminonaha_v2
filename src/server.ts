@@ -168,8 +168,13 @@ export class Server {
       }
 
       if (path === "/api/browse" && req.method === "POST") {
-        // フォルダ選択ダイアログの代替: 手動パス入力
-        // Denoにはネイティブダイアログがないのでパス検証のみ
+        // OSのフォルダ選択ダイアログを起動
+        const result = await this.openFolderDialog();
+        return Response.json(result, { headers });
+      }
+
+      if (path === "/api/browse/validate" && req.method === "POST") {
+        // 手動入力パスの検証
         const { path: dirPath } = await req.json();
         try {
           const stat = await Deno.stat(dirPath);
@@ -296,6 +301,66 @@ export class Server {
     this.watcher.stopWatching();
     this.state.isWatching = false;
     this.broadcastState();
+  }
+
+  /** OSのフォルダ選択ダイアログを起動 */
+  private async openFolderDialog(): Promise<{ valid: boolean; path?: string; error?: string }> {
+    try {
+      if (Deno.build.os === "windows") {
+        // PowerShellでFolderBrowserDialogを起動
+        const cmd = new Deno.Command("powershell", {
+          args: [
+            "-NoProfile",
+            "-Command",
+            `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '監視するフォルダを選択してください'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }`,
+          ],
+          stdout: "piped",
+          stderr: "piped",
+        });
+        const output = await cmd.output();
+        const selectedPath = new TextDecoder().decode(output.stdout).trim();
+        if (selectedPath) {
+          return { valid: true, path: selectedPath };
+        }
+        return { valid: false, error: "キャンセルされました" };
+      } else if (Deno.build.os === "darwin") {
+        // macOS: osascript
+        const cmd = new Deno.Command("osascript", {
+          args: ["-e", `choose folder with prompt "監視するフォルダを選択してください"`],
+          stdout: "piped",
+          stderr: "piped",
+        });
+        const output = await cmd.output();
+        let selectedPath = new TextDecoder().decode(output.stdout).trim();
+        // macOSのalias形式をPOSIXパスに変換
+        if (selectedPath.includes(":")) {
+          selectedPath = "/" + selectedPath.replace(/:/g, "/").replace(/^[^/]*/, "");
+        }
+        if (selectedPath) {
+          return { valid: true, path: selectedPath };
+        }
+        return { valid: false, error: "キャンセルされました" };
+      } else {
+        // Linux: zenity
+        try {
+          const cmd = new Deno.Command("zenity", {
+            args: ["--file-selection", "--directory", "--title=監視するフォルダを選択"],
+            stdout: "piped",
+            stderr: "piped",
+          });
+          const output = await cmd.output();
+          const selectedPath = new TextDecoder().decode(output.stdout).trim();
+          if (selectedPath) {
+            return { valid: true, path: selectedPath };
+          }
+          return { valid: false, error: "キャンセルされました" };
+        } catch {
+          return { valid: false, error: "フォルダダイアログが利用できません。パスを手動入力してください。" };
+        }
+      }
+    } catch (e) {
+      return { valid: false, error: `ダイアログエラー: ${e}` };
+    }
   }
 
   /** ブラウザを開く */

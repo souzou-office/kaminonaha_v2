@@ -654,9 +654,12 @@ export function getWebUI(): string {
     <div class="modal-title">📂 監視フォルダの追加</div>
     <div class="form-group">
       <label class="form-label">フォルダパス</label>
-      <input type="text" id="folderPathInput" class="form-input"
-        placeholder="例: C:\\Users\\username\\Documents\\Scan">
-      <div class="form-hint">監視するフォルダのフルパスを入力してください</div>
+      <div class="form-row">
+        <input type="text" id="folderPathInput" class="form-input"
+          placeholder="パスを入力 または 右のボタンで選択">
+        <button class="btn btn-primary" onclick="browseFolder()" style="white-space:nowrap;">📂 選択</button>
+      </div>
+      <div class="form-hint">「選択」ボタンでフォルダ選択ダイアログが開きます</div>
     </div>
     <div class="toggle-row">
       <span class="toggle-label">📅 ファイル名に日付を付ける</span>
@@ -932,12 +935,32 @@ export function getWebUI(): string {
     document.getElementById('folderPathInput').focus();
   }
 
+  async function browseFolder() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '選択中...';
+    try {
+      const result = await api('/browse', 'POST');
+      if (result.valid && result.path) {
+        document.getElementById('folderPathInput').value = result.path;
+        toast('フォルダを選択しました', 'success');
+      } else if (result.error && result.error !== 'キャンセルされました') {
+        toast(result.error, 'error');
+      }
+    } catch (e) {
+      toast('フォルダ選択に失敗しました', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📂 選択';
+    }
+  }
+
   async function addFolder() {
     const path = document.getElementById('folderPathInput').value.trim();
-    if (!path) return toast('フォルダパスを入力してください', 'error');
+    if (!path) return toast('フォルダパスを入力または選択してください', 'error');
 
     // パスの検証
-    const check = await api('/browse', 'POST', { path });
+    const check = await api('/browse/validate', 'POST', { path });
     if (!check.valid) {
       return toast('フォルダが見つかりません: ' + path, 'error');
     }
