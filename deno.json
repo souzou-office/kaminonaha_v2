@@ -1,0 +1,11 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run src/main.ts",
+    "compile": "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output kaminonaha src/main.ts",
+    "compile-windows": "deno compile --target x86_64-pc-windows-msvc --allow-read --allow-write --allow-net --allow-env --allow-run --output kaminonaha.exe src/main.ts"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.window"]
+  }
+}

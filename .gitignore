@@ -1,0 +1,14 @@
+# Build output
+kaminonaha
+kaminonaha.exe
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Config (contains API keys)
+config.json
