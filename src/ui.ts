@@ -289,56 +289,237 @@ export function getWebUI(): string {
 
 <script>
 let cfg={},st={isWatching:false,logs:[],processedCount:0,errorCount:0};
-async function api(p,m='GET',b=null){const o={method:m,headers:{'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);return(await fetch('/api'+p,o)).json();}
-function sse(){const es=new EventSource('/api/events');es.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.state)st=d.state;if(d.config)cfg=d.config;render();}catch{}};es.onerror=()=>setTimeout(sse,3000);}
+
+async function api(p,m,b){
+  var o={method:m||'GET',headers:{'Content-Type':'application/json'}};
+  if(b)o.body=JSON.stringify(b);
+  return(await fetch('/api'+p,o)).json();
+}
+
+function sse(){
+  var es=new EventSource('/api/events');
+  es.onmessage=function(e){
+    try{var d=JSON.parse(e.data);if(d.state)st=d.state;if(d.config)cfg=d.config;render();}catch(x){}
+  };
+  es.onerror=function(){setTimeout(sse,3000);};
+}
+
+function esc(s){
+  var d=document.createElement('div');
+  d.appendChild(document.createTextNode(s));
+  return d.innerHTML;
+}
+
 function render(){
-  const w=st.isWatching;
+  var w=st.isWatching;
   document.getElementById('statusBadge').className='header-status '+(w?'active':'inactive');
   document.getElementById('statusText').textContent=w?'監視中':'停止中';
   document.getElementById('btnStart').style.display=w?'none':'';
   document.getElementById('btnStop').style.display=w?'':'none';
-  const fs=cfg.watchFolders||[];
-  document.getElementById('statFolders').textContent=fs.filter(f=>f.enabled).length;
+  var fs=cfg.watchFolders||[];
+  document.getElementById('statFolders').textContent=fs.filter(function(f){return f.enabled;}).length;
   document.getElementById('statProcessed').textContent=st.processedCount;
   document.getElementById('statErrors').textContent=st.errorCount;
-  const ab=document.getElementById('apiBadge');
-  if(cfg.apiKey){ab.textContent='API '+cfg.apiKey;ab.className='api-badge on';}else{ab.textContent='API 未設定';ab.className='api-badge off';}
-  rFolders(fs);rLogs(st.logs||[]);
+  var ab=document.getElementById('apiBadge');
+  if(cfg.apiKey){ab.textContent='API '+cfg.apiKey;ab.className='api-badge on';}
+  else{ab.textContent='API 未設定';ab.className='api-badge off';}
+  rFolders(fs);
+  rLogs(st.logs||[]);
 }
+
 function rFolders(fs){
-  const el=document.getElementById('folderList');
+  var el=document.getElementById('folderList');
   if(!fs.length){el.innerHTML='<div class="empty"><div class="empty-icon">📁</div>監視フォルダが未登録です</div>';return;}
-  el.innerHTML=fs.map(f=>{
-    const p=[];if(f.includeDate)p.push('<span class="pill">日付</span>');if(f.includeNames)p.push('<span class="pill">名前</span>');if(f.customPrompt)p.push('<span class="pill">カスタム</span>');if(!f.enabled)p.push('<span class="pill off">無効</span>');
-    return '<div class="folder-row '+(f.enabled?'':'off')+'"><div class="folder-dot"></div><div class="folder-detail"><div class="folder-path">'+esc(f.path)+'</div>'+(p.length?'<div class="folder-meta">'+p.join('')+'</div>':'')+'</div><div class="folder-actions"><button class="btn btn-icon-only" onclick="editFolder(\''+attr(f.path)+'\')" title="編集">✏️</button><button class="btn btn-icon-only" onclick="deleteFolder(\''+attr(f.path)+'\')" title="削除" style="color:var(--red);">✕</button></div></div>';
-  }).join('');
+  el.innerHTML='';
+  fs.forEach(function(f,i){
+    var row=document.createElement('div');
+    row.className='folder-row'+(f.enabled?'':' off');
+
+    var dot=document.createElement('div');
+    dot.className='folder-dot';
+    row.appendChild(dot);
+
+    var detail=document.createElement('div');
+    detail.className='folder-detail';
+    var pathEl=document.createElement('div');
+    pathEl.className='folder-path';
+    pathEl.textContent=f.path;
+    detail.appendChild(pathEl);
+
+    var meta=document.createElement('div');
+    meta.className='folder-meta';
+    if(f.includeDate){var t=document.createElement('span');t.className='pill';t.textContent='日付';meta.appendChild(t);}
+    if(f.includeNames){var t2=document.createElement('span');t2.className='pill';t2.textContent='名前';meta.appendChild(t2);}
+    if(f.customPrompt){var t3=document.createElement('span');t3.className='pill';t3.textContent='カスタム';meta.appendChild(t3);}
+    if(!f.enabled){var t4=document.createElement('span');t4.className='pill off';t4.textContent='無効';meta.appendChild(t4);}
+    if(meta.childNodes.length)detail.appendChild(meta);
+    row.appendChild(detail);
+
+    var acts=document.createElement('div');
+    acts.className='folder-actions';
+    var editBtn=document.createElement('button');
+    editBtn.className='btn btn-icon-only';
+    editBtn.textContent='✏️';
+    editBtn.title='編集';
+    editBtn.setAttribute('data-path',f.path);
+    editBtn.addEventListener('click',function(){editFolder(this.getAttribute('data-path'));});
+    acts.appendChild(editBtn);
+
+    var delBtn=document.createElement('button');
+    delBtn.className='btn btn-icon-only';
+    delBtn.textContent='✕';
+    delBtn.title='削除';
+    delBtn.style.color='var(--red)';
+    delBtn.setAttribute('data-path',f.path);
+    delBtn.addEventListener('click',function(){deleteFolder(this.getAttribute('data-path'));});
+    acts.appendChild(delBtn);
+
+    row.appendChild(acts);
+    el.appendChild(row);
+  });
 }
+
 function rLogs(logs){
-  const el=document.getElementById('logBox');
+  var el=document.getElementById('logBox');
   if(!logs.length){el.innerHTML='<div class="empty" style="padding:12px;">ログはまだありません</div>';return;}
-  el.innerHTML=logs.slice(-200).map(l=>{const c=l.level==='success'?'ok':l.level==='error'?'ng':l.level==='warning'?'warn':'';return '<div class="log-line '+c+'"><span class="log-t">'+l.timestamp+'</span><span class="log-m">'+esc(l.message)+'</span></div>';}).join('');
+  var html='';
+  var recent=logs.slice(-200);
+  for(var i=0;i<recent.length;i++){
+    var l=recent[i];
+    var c=l.level==='success'?'ok':l.level==='error'?'ng':l.level==='warning'?'warn':'';
+    html+='<div class="log-line '+c+'"><span class="log-t">'+esc(l.timestamp)+'</span><span class="log-m">'+esc(l.message)+'</span></div>';
+  }
+  el.innerHTML=html;
   el.scrollTop=el.scrollHeight;
 }
-async function startWatching(){await api('/watch/start','POST');}
-async function stopWatching(){await api('/watch/stop','POST');}
+
+function startWatching(){api('/watch/start','POST');}
+function stopWatching(){api('/watch/stop','POST');}
 function clearLogs(){st.logs=[];rLogs([]);}
-function openApiModal(){document.getElementById('apiModal').classList.add('open');document.getElementById('apiKeyInput').value='';document.getElementById('apiKeyInput').focus();}
-async function testApiKey(){const k=document.getElementById('apiKeyInput').value.trim();if(!k)return toast('APIキーを入力してください','ng');const r=await api('/apikey/test','POST',{apiKey:k});toast(r.ok?'接続テスト成功':'接続失敗: '+(r.error||''),r.ok?'ok':'ng');}
-async function saveApiKey(){const k=document.getElementById('apiKeyInput').value.trim();if(!k)return toast('APIキーを入力してください','ng');const r=await api('/apikey','PUT',{apiKey:k});if(r.ok){toast('APIキーを保存しました','ok');closeModal('apiModal');}else toast('保存失敗: '+(r.error||''),'ng');}
-function openFolderModal(){document.getElementById('folderModal').classList.add('open');document.getElementById('folderPathInput').value='';document.getElementById('folderIncludeDate').checked=false;document.getElementById('folderIncludeNames').checked=false;document.getElementById('folderCustomPrompt').value='';}
-async function browseFolder(){const btn=event.target;btn.disabled=true;btn.textContent='選択中…';try{const r=await api('/browse','POST');if(r.valid&&r.path){document.getElementById('folderPathInput').value=r.path;toast('フォルダを選択しました','ok');}else if(r.error&&r.error!=='キャンセルされました')toast(r.error,'ng');}catch{toast('フォルダ選択に失敗','ng');}finally{btn.disabled=false;btn.textContent='選択';}}
-async function addFolder(){const p=document.getElementById('folderPathInput').value.trim();if(!p)return toast('フォルダを選択してください','ng');const chk=await api('/browse/validate','POST',{path:p});if(!chk.valid)return toast('フォルダが見つかりません','ng');if((cfg.watchFolders||[]).some(f=>f.path===p))return toast('既に追加されています','ng');await api('/folders','POST',{path:p,enabled:true,includeDate:document.getElementById('folderIncludeDate').checked,includeNames:document.getElementById('folderIncludeNames').checked,customPrompt:document.getElementById('folderCustomPrompt').value.trim()});toast('追加しました','ok');closeModal('folderModal');}
-function editFolder(p){const f=(cfg.watchFolders||[]).find(x=>x.path===p);if(!f)return;document.getElementById('editPath').value=f.path;document.getElementById('editPathShow').textContent=f.path;document.getElementById('editEnabled').checked=f.enabled;document.getElementById('editDate').checked=f.includeDate;document.getElementById('editNames').checked=f.includeNames;document.getElementById('editPrompt').value=f.customPrompt||'';document.getElementById('editModal').classList.add('open');}
-async function updateFolder(){await api('/folders','PUT',{path:document.getElementById('editPath').value,enabled:document.getElementById('editEnabled').checked,includeDate:document.getElementById('editDate').checked,includeNames:document.getElementById('editNames').checked,customPrompt:document.getElementById('editPrompt').value.trim()});toast('更新しました','ok');closeModal('editModal');}
-async function deleteFolder(p){if(!confirm('このフォルダを削除しますか？'))return;await api('/folders','DELETE',{path:p});toast('削除しました','ok');}
-function openSettingsModal(){document.getElementById('setMaxLen').value=cfg.maxFilenameLength||40;document.getElementById('setAutoStart').checked=cfg.autoStart||false;document.getElementById('settingsModal').classList.add('open');}
-async function saveSettings(){await api('/config','PUT',{maxFilenameLength:parseInt(document.getElementById('setMaxLen').value)||40,autoStart:document.getElementById('setAutoStart').checked});toast('保存しました','ok');closeModal('settingsModal');}
+
+function openApiModal(){
+  document.getElementById('apiModal').classList.add('open');
+  document.getElementById('apiKeyInput').value='';
+  document.getElementById('apiKeyInput').focus();
+}
+
+function testApiKey(){
+  var k=document.getElementById('apiKeyInput').value.trim();
+  if(!k)return toast('APIキーを入力してください','ng');
+  api('/apikey/test','POST',{apiKey:k}).then(function(r){
+    toast(r.ok?'接続テスト成功':'接続失敗: '+(r.error||''),r.ok?'ok':'ng');
+  });
+}
+
+function saveApiKey(){
+  var k=document.getElementById('apiKeyInput').value.trim();
+  if(!k)return toast('APIキーを入力してください','ng');
+  api('/apikey','PUT',{apiKey:k}).then(function(r){
+    if(r.ok){toast('APIキーを保存しました','ok');closeModal('apiModal');}
+    else toast('保存失敗: '+(r.error||''),'ng');
+  });
+}
+
+function openFolderModal(){
+  document.getElementById('folderModal').classList.add('open');
+  document.getElementById('folderPathInput').value='';
+  document.getElementById('folderIncludeDate').checked=false;
+  document.getElementById('folderIncludeNames').checked=false;
+  document.getElementById('folderCustomPrompt').value='';
+}
+
+function browseFolder(){
+  var btn=document.querySelector('#folderModal .btn-accent');
+  btn.disabled=true;btn.textContent='選択中…';
+  api('/browse','POST').then(function(r){
+    if(r.valid&&r.path){
+      document.getElementById('folderPathInput').value=r.path;
+      toast('フォルダを選択しました','ok');
+    }else if(r.error&&r.error!=='キャンセルされました'){
+      toast(r.error,'ng');
+    }
+  }).catch(function(){toast('フォルダ選択に失敗','ng');}).finally(function(){
+    btn.disabled=false;btn.textContent='選択';
+  });
+}
+
+function addFolder(){
+  var p=document.getElementById('folderPathInput').value.trim();
+  if(!p)return toast('フォルダを選択してください','ng');
+  api('/browse/validate','POST',{path:p}).then(function(chk){
+    if(!chk.valid)return toast('フォルダが見つかりません','ng');
+    if((cfg.watchFolders||[]).some(function(f){return f.path===p;}))return toast('既に追加されています','ng');
+    api('/folders','POST',{
+      path:p,enabled:true,
+      includeDate:document.getElementById('folderIncludeDate').checked,
+      includeNames:document.getElementById('folderIncludeNames').checked,
+      customPrompt:document.getElementById('folderCustomPrompt').value.trim()
+    }).then(function(){toast('追加しました','ok');closeModal('folderModal');});
+  });
+}
+
+function editFolder(p){
+  var f=null;
+  var fs=cfg.watchFolders||[];
+  for(var i=0;i<fs.length;i++){if(fs[i].path===p){f=fs[i];break;}}
+  if(!f)return;
+  document.getElementById('editPath').value=f.path;
+  document.getElementById('editPathShow').textContent=f.path;
+  document.getElementById('editEnabled').checked=f.enabled;
+  document.getElementById('editDate').checked=f.includeDate;
+  document.getElementById('editNames').checked=f.includeNames;
+  document.getElementById('editPrompt').value=f.customPrompt||'';
+  document.getElementById('editModal').classList.add('open');
+}
+
+function updateFolder(){
+  api('/folders','PUT',{
+    path:document.getElementById('editPath').value,
+    enabled:document.getElementById('editEnabled').checked,
+    includeDate:document.getElementById('editDate').checked,
+    includeNames:document.getElementById('editNames').checked,
+    customPrompt:document.getElementById('editPrompt').value.trim()
+  }).then(function(){toast('更新しました','ok');closeModal('editModal');});
+}
+
+function deleteFolder(p){
+  if(!confirm('このフォルダを削除しますか？'))return;
+  api('/folders','DELETE',{path:p}).then(function(){toast('削除しました','ok');});
+}
+
+function openSettingsModal(){
+  document.getElementById('setMaxLen').value=cfg.maxFilenameLength||40;
+  document.getElementById('setAutoStart').checked=cfg.autoStart||false;
+  document.getElementById('settingsModal').classList.add('open');
+}
+
+function saveSettings(){
+  api('/config','PUT',{
+    maxFilenameLength:parseInt(document.getElementById('setMaxLen').value)||40,
+    autoStart:document.getElementById('setAutoStart').checked
+  }).then(function(){toast('保存しました','ok');closeModal('settingsModal');});
+}
+
 function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
-document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.overlay.open').forEach(m=>m.classList.remove('open'));});
-function toast(msg,type='ok'){const c=document.getElementById('toasts'),el=document.createElement('div');el.className='toast '+type;el.textContent=msg;c.appendChild(el);setTimeout(()=>el.remove(),3000);}
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function attr(s){return s.replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'");}
+
+document.querySelectorAll('.overlay').forEach(function(o){
+  o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('open');});
+});
+
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape')document.querySelectorAll('.overlay.open').forEach(function(m){m.classList.remove('open');});
+});
+
+function toast(msg,type){
+  type=type||'ok';
+  var c=document.getElementById('toasts');
+  var el=document.createElement('div');
+  el.className='toast '+type;
+  el.textContent=msg;
+  c.appendChild(el);
+  setTimeout(function(){el.remove();},3000);
+}
+
 sse();
 </script>
 </body>
